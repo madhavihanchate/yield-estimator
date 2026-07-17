@@ -68,6 +68,61 @@ csv_df["_crop_n"] = csv_df["Crop"].apply(_norm)
 units_df = pd.read_csv("data/crop_units.csv")
 CROP_UNITS = {_norm(r["crop"]): r["unit"] for _, r in units_df.iterrows()}
 
+# --- crop -> ideal soil ranges (from India_State_Wise_Crops.xlsx, agronomic literature) ---
+import json
+with open("data/crop_soil_ranges.json") as f:
+    CROP_SOIL_RANGES = json.load(f)
+
+# --- crop -> peak-season NDVI baseline (from remote sensing literature) ---
+with open("data/crop_ndvi_baseline.json") as f:
+    _ndvi_raw = json.load(f)
+NDVI_BASELINE = {k: v for k, v in _ndvi_raw.items() if not k.startswith("_")}
+NDVI_DEFAULT = _ndvi_raw.get("_default", 0.65)
+
+def _find_soil_ranges(crop):
+    """Find ideal soil ranges for a crop. Tries exact match, then fuzzy partial match."""
+    c_n = _norm(crop)
+    # Exact match
+    if c_n in CROP_SOIL_RANGES:
+        return CROP_SOIL_RANGES[c_n]
+    # Try partial match (e.g. "Rice" matches "Rice (Paddy)")
+    for key in CROP_SOIL_RANGES:
+        if c_n in _norm(key) or _norm(key) in c_n:
+            return CROP_SOIL_RANGES[key]
+    return None
+
+def _get_ndvi_baseline(crop):
+    """Look up peak-season NDVI baseline for a crop. Fuzzy match, then default."""
+    c_n = _norm(crop)
+    if c_n in NDVI_BASELINE:
+        return NDVI_BASELINE[c_n]
+    for key in NDVI_BASELINE:
+        if c_n in _norm(key) or _norm(key) in c_n:
+            return NDVI_BASELINE[key]
+    return NDVI_DEFAULT
+
+def soil_range_score(n, p, k, oc, ph, ranges):
+    """Score user's soil inputs against ideal ranges for a crop. Returns 0-100."""
+    scores = []
+    param_map = {
+        'oc': oc, 'n': n, 'p': p, 'k': k, 'ph': ph
+    }
+    for param, val in param_map.items():
+        if val is None or param not in ranges or ranges[param] is None:
+            continue
+        low, high = ranges[param]
+        if low <= val <= high:
+            scores.append(100)  # Perfect - within ideal range
+        elif val < low:
+            # Below range - score based on how far below
+            deficit = (low - val) / max(low, 0.01)
+            scores.append(max(0, 100 - deficit * 100))
+        else:
+            # Above range - score based on how far above
+            excess = (val - high) / max(high, 0.01)
+            scores.append(max(0, 100 - excess * 100))
+    return round(sum(scores) / len(scores), 1) if scores else 50.0
+
 def get_crop_unit(crop):
     # default assumption for crops outside the xls's 34 — most Indian APY yields
     # are reported in Tonne/Hectare, but this is an assumption, not verified per-crop.
@@ -75,7 +130,7 @@ def get_crop_unit(crop):
 xls_df = pd.read_csv(XLS_PARSED_PATH)
 xls_df["state"] = xls_df["state"].apply(_strip_prefix)
 xls_df["district"] = xls_df["district"].apply(_strip_prefix)
-xls_df["yield_num"] = xls_df["yield"].apply(_clean_num)
+xls_df["yield_num"] = xls_df["yield_num"] if "yield_num" in xls_df.columns else xls_df["yield"].apply(_clean_num)
 xls_df["year_start"] = xls_df["year"].str.extract(r"(\d{4})").astype(float)
 xls_df["_state_n"] = xls_df["state"].apply(_norm)
 xls_df["_district_n"] = xls_df["district"].apply(_norm)
@@ -145,6 +200,19 @@ def soil_suitability_score(n, p, k, oc, ph):
     else:
         grade = "Critical"
     return round(total, 1), grade
+
+
+def _grade(score):
+    if score >= 80:
+        return "Excellent"
+    elif score >= 65:
+        return "Good"
+    elif score >= 50:
+        return "Fair"
+    elif score >= 35:
+        return "Poor"
+    else:
+        return "Critical"
 
 
 # ---------------------------------------------------------------------------
@@ -307,20 +375,35 @@ def api_districts():
     state = request.args.get("state", "").strip()
     s_n = _norm(state)
     districts = sorted(xls_df[xls_df["_state_n"] == s_n]["district"].dropna().unique().tolist())
-    return jsonify({"districts": districts})
+    has_csv = _norm(state) in csv_df["_state_n"].values
+    return jsonify({
+        "districts": districts,
+        "csv_available": has_csv,
+        "note": "" if districts else "No district-level data — will use state-level average from CSV" if has_csv else "No data available for this state"
+    })
 
 
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
-    body = request.get_json()
-    state = body.get("state", "").strip()
-    district = body.get("district", "").strip()
-    crop = body.get("crop", "").strip()
+    body = request.get_json(silent=True) or {}
+    state = (body.get("state") or "").strip()
+    district = (body.get("district") or "").strip()
+    crop = (body.get("crop") or "").strip()
     n = _clean_num(body.get("n"))
     p = _clean_num(body.get("p"))
     k = _clean_num(body.get("k"))
     oc = _clean_num(body.get("oc"))
     ph = _clean_num(body.get("ph"))
+
+    errors = []
+    if not state:
+        errors.append("State is required.")
+    if not crop:
+        errors.append("Crop is required.")
+    if n is None and p is None and k is None and oc is None and ph is None:
+        errors.append("At least one soil parameter (N, P, K, OC, or pH) is required.")
+    if errors:
+        return jsonify({"error": " ".join(errors)}), 400
 
     source, series = get_historical_series(state, district, crop)
 
@@ -340,16 +423,37 @@ def api_predict():
 
         ndvi_val = get_current_ndvi(state, district)
         if ndvi_val is not None:
-            # crude historical baseline NDVI — no long-run series stored per district here,
-            # so compare against a generic healthy-cropland reference (0.5) as a stand-in.
-            # Replace with a real per-district historical NDVI average once you have one.
-            ndvi_factor = ndvi_val / 0.5
-            ndvi_note = f"live NDVI={round(ndvi_val,3)} vs reference 0.5"
+            # Compare live NDVI against crop-specific peak-season baseline from literature.
+            ndvi_baseline = _get_ndvi_baseline(crop)
+            ndvi_factor = ndvi_val / ndvi_baseline
+            ndvi_note = f"live NDVI={round(ndvi_val,3)} vs {crop} baseline {ndvi_baseline}"
 
     if not series:
-        # Crop not found in either dataset — no yield baseline to scale from, so we do NOT
-        # fabricate a fake tonnes/hectare number by borrowing another crop's average.
-        # Instead: a 0-100 soil+climate suitability score, honestly labeled as NOT a yield figure.
+        # Crop not in CSV dataset — try soil-range-based estimate from agronomic data
+        ranges = _find_soil_ranges(crop)
+        if ranges:
+            soil_score_new = soil_range_score(n, p, k, oc, ph, ranges)
+            # Estimate yield from soil score + weather factors
+            rf = rainfall_factor if rainfall_factor is not None else 1.0
+            nf = ndvi_factor if ndvi_factor is not None else 1.0
+            # Typical Indian crop yield range: 0.5–8 t/ha depending on crop
+            # Use a middle reference (2.5 t/ha) scaled by soil score and weather
+            estimated_yield = round(2.5 * (soil_score_new / 100.0) * rf * nf, 2)
+
+            return jsonify({
+                "mode": "suitability_estimate",
+                "note": f"No historical yield data for '{crop}' — estimated from agronomic soil ranges + live weather. Treat as approximate.",
+                "soil_score": soil_score_new,
+                "soil_grade": _grade(soil_score_new),
+                "ideal_ranges": ranges,
+                "rainfall_factor": rainfall_factor,
+                "ndvi_factor": ndvi_factor,
+                "ndvi_note": ndvi_note,
+                "estimated_yield": estimated_yield,
+                "unit": get_unit(crop),
+            })
+
+        # No soil ranges found either — pure suitability indicator only
         rf = rainfall_factor if rainfall_factor is not None else 1.0
         nf = ndvi_factor if ndvi_factor is not None else 1.0
         combined = 0.5 * max(0.5, min(1.5, rf)) + 0.5 * max(0.5, min(1.5, nf))
@@ -357,7 +461,7 @@ def api_predict():
 
         return jsonify({
             "mode": "suitability_only",
-            "note": f"No historical yield data found for '{crop}' in either dataset — this is NOT a yield prediction, only a soil+rainfall+NDVI suitability indicator.",
+            "note": f"No historical yield data or soil ranges found for '{crop}' — this is NOT a yield prediction, only a soil+rainfall+NDVI suitability indicator.",
             "soil_score": soil_score,
             "soil_grade": soil_grade,
             "rainfall_factor": rainfall_factor,
