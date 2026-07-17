@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Yield Estimator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; background: #fafaf8; }
+  h1 { font-size: 1.5rem; margin-bottom: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 20px 0; }
+  label { display: block; font-size: 0.85rem; margin-bottom: 4px; color: #444; }
+  input, select { width: 100%; padding: 9px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; }
+  input:focus, select:focus { outline: none; border-color: #2c6e3f; box-shadow: 0 0 0 3px rgba(44,110,63,0.15); }
+  button { padding: 12px 24px; background: #2c6e3f; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600; transition: background 0.15s; }
+  button:hover:not(:disabled) { background: #235533; }
+  button:disabled { background: #999; }
+  #result { margin-top: 24px; }
+  .note { font-size: 0.85rem; color: #a15c00; background: #fff8e6; padding: 10px 14px; border-radius: 8px; margin-top: 12px; }
+  .warn-banner { font-size: 0.9rem; color: #8a4b00; background: #fff3d9; border: 1px solid #ffdb99; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+  .error { color: #b00020; }
+  .stat-row { display: flex; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+  .stat { background: #f4f6f4; padding: 12px 18px; border-radius: 10px; }
+  .stat .label { font-size: 0.75rem; color: #666; text-transform: uppercase; letter-spacing: 0.03em; }
+  .stat .value { font-size: 1.2rem; font-weight: 700; margin-top: 2px; }
+  .grade-Excellent { color: #1a7a3c; }
+  .grade-Good { color: #2c6e3f; }
+  .grade-Fair { color: #b8860b; }
+  .grade-Poor { color: #c96b00; }
+  .grade-Critical { color: #b00020; }
+  .hero-card { background: linear-gradient(135deg, #eef7ee, #f7fbf5); border: 1px solid #d4e9d4; border-radius: 16px; padding: 24px 28px; margin: 16px 0; text-align: center; }
+  .hero-card .hero-label { font-size: 0.85rem; color: #4a6b4a; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .hero-card .hero-value { font-size: 3rem; font-weight: 800; color: #1a4d2e; line-height: 1.1; margin: 6px 0 2px; }
+  .hero-card .hero-unit { font-size: 1.1rem; color: #4a6b4a; font-weight: 600; }
+  table.ytable { border-collapse: collapse; font-size: 0.9rem; width: 100%; max-width: 400px; }
+  table.ytable th { text-align: left; color: #666; padding: 6px 12px 6px 0; border-bottom: 2px solid #ddd; }
+  table.ytable td { padding: 6px 12px 6px 0; border-bottom: 1px solid #eee; }
+  table.ytable td:last-child { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>Crop Yield Estimator</h1>
+<p style="color:#666; font-size:0.9rem;">
+  Probable estimate, not a validated forecaster — see disclaimer below results.
+</p>
+
+<div class="grid">
+  <div><label>State</label>
+    <input list="states" id="state" placeholder="e.g. Punjab">
+    <datalist id="states">{% for s in states %}<option value="{{ s }}">{% endfor %}</datalist>
+  </div>
+  <div><label>District</label>
+    <select id="district" disabled>
+      <option value="">Select a state first</option>
+    </select>
+  </div>
+  <div><label>Crop</label>
+    <input list="crops" id="crop" placeholder="e.g. Wheat (or type any crop not listed)">
+    <datalist id="crops">{% for c in crops %}<option value="{{ c }}">{% endfor %}</datalist>
+  </div>
+  <div></div>
+  <div><label>Nitrogen (N, kg/ha)</label><input id="n" type="number" step="any"></div>
+  <div><label>Phosphorus (P, kg/ha)</label><input id="p" type="number" step="any"></div>
+  <div><label>Potassium (K, kg/ha)</label><input id="k" type="number" step="any"></div>
+  <div><label>Organic Carbon (OC, %)</label><input id="oc" type="number" step="any"></div>
+  <div><label>Soil pH</label><input id="ph" type="number" step="any"></div>
+</div>
+
+<button id="predictBtn" onclick="predict()">Predict Yield</button>
+
+<div id="result"></div>
+<canvas id="chart" height="90" style="margin-top:20px;"></canvas>
+<div id="yieldTable"></div>
+
+<script>
+let chartInstance = null;
+
+async function refreshDistricts() {
+  const state = document.getElementById('state').value;
+  const sel = document.getElementById('district');
+  if (!state) {
+    sel.innerHTML = '<option value="">Select a state first</option>';
+    sel.disabled = true;
+    return;
+  }
+  try {
+    const res = await fetch(`/api/districts?state=${encodeURIComponent(state)}`);
+    const data = await res.json();
+    if (data.districts.length === 0) {
+      sel.innerHTML = '<option value="">No district-level data for this state</option>';
+      sel.disabled = true;
+    } else {
+      sel.innerHTML = '<option value="">Select district</option>' +
+        data.districts.map(d => `<option value="${d}">${d}</option>`).join('');
+      sel.disabled = false;
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">Could not load districts</option>';
+    sel.disabled = true;
+  }
+}
+document.getElementById('state').addEventListener('change', refreshDistricts);
+document.getElementById('state').addEventListener('blur', refreshDistricts);
+
+async function predict() {
+  const btn = document.getElementById('predictBtn');
+  const resultDiv = document.getElementById('result');
+  btn.disabled = true;
+  resultDiv.innerHTML = "Running...";
+
+  const payload = {
+    state: document.getElementById('state').value,
+    district: document.getElementById('district').value,
+    crop: document.getElementById('crop').value,
+    n: document.getElementById('n').value,
+    p: document.getElementById('p').value,
+    k: document.getElementById('k').value,
+    oc: document.getElementById('oc').value,
+    ph: document.getElementById('ph').value,
+  };
+
+  try {
+    const res = await fetch('/api/predict', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    btn.disabled = false;
+
+    if (!res.ok) {
+      resultDiv.innerHTML = `<p class="error">${data.error}</p>`;
+      return;
+    }
+
+    const gradeClass = `grade-${data.soil_grade}`;
+
+    if (data.mode === 'suitability_only') {
+      // No historical yield data for this crop — honest suitability index, not a fake yield number.
+      if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+      document.getElementById('yieldTable').innerHTML = '';
+      resultDiv.innerHTML = `
+        <div class="warn-banner">${data.note}</div>
+        <div class="hero-card">
+          <div class="hero-label">Soil + Climate Suitability</div>
+          <div class="hero-value">${data.suitability_score}<span style="font-size:1.8rem;">/100</span></div>
+          <div class="hero-unit">not a yield figure — no yield data exists for this crop</div>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><div class="label">Soil score</div><div class="value ${gradeClass}">${data.soil_score} / 100 (${data.soil_grade})</div></div>
+          <div class="stat"><div class="label">Rainfall factor</div><div class="value">${data.rainfall_factor ? data.rainfall_factor.toFixed(2) : 'n/a'}</div></div>
+          <div class="stat"><div class="label">NDVI factor</div><div class="value">${data.ndvi_factor ? data.ndvi_factor.toFixed(2) : 'n/a'}</div></div>
+        </div>
+        <p class="note">NDVI: ${data.ndvi_note}</p>
+      `;
+      return;
+    }
+
+    resultDiv.innerHTML = `
+      <div class="hero-card">
+        <div class="hero-label">${data.current_year} Predicted Yield</div>
+        <div class="hero-value">${data.predicted_yield.toFixed(2)}</div>
+        <div class="hero-unit">${data.unit}</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat"><div class="label">Data source</div><div class="value">${data.source}</div></div>
+        <div class="stat"><div class="label">Soil score</div><div class="value ${gradeClass}">${data.soil_score} / 100 (${data.soil_grade})</div></div>
+        <div class="stat"><div class="label">Rainfall factor</div><div class="value">${data.rainfall_factor ? data.rainfall_factor.toFixed(2) : 'n/a'}</div></div>
+        <div class="stat"><div class="label">NDVI factor</div><div class="value">${data.ndvi_factor ? data.ndvi_factor.toFixed(2) : 'n/a'}</div></div>
+      </div>
+      <p class="note">${data.disclaimer} NDVI: ${data.ndvi_note}</p>
+    `;
+
+    const years = Object.keys(data.historical).sort();
+    const values = years.map(y => data.historical[y]);
+    years.push(`${data.current_year} (Predicted)`);
+    values.push(data.predicted_yield);
+
+    const colors = years.map((y, i) => i === years.length - 1 ? '#c96b00' : '#2c6e3f');
+
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(document.getElementById('chart'), {
+      type: 'bar',
+      data: {
+        labels: years,
+        datasets: [{ label: 'Yield', data: values, backgroundColor: colors }]
+      },
+      options: {
+        plugins: {
+          legend: { display: false },
+          datalabels: {
+            anchor: 'end',
+            align: 'top',
+            formatter: v => v.toFixed(2),
+            color: '#333',
+            font: { weight: 'bold', size: 11 }
+          }
+        },
+        scales: { y: { grace: '10%' } }
+      },
+      plugins: [ChartDataLabels]
+    });
+
+    const tableRows = years.map((y, i) =>
+      `<tr><td style="padding:4px 12px 4px 0;">${y}</td><td style="padding:4px;font-weight:600;">${values[i].toFixed(3)}</td></tr>`
+    ).join('');
+    document.getElementById('yieldTable').innerHTML = `
+      <h3 style="font-size:0.95rem; margin-top:24px;">Yield by year (${data.unit})</h3>
+      <table class="ytable">
+        <tr><th>Year</th><th>Yield</th></tr>
+        ${tableRows}
+      </table>`;
+
+  } catch (e) {
+    btn.disabled = false;
+    resultDiv.innerHTML = `<p class="error">Request failed: ${e}</p>`;
+  }
+}
+</script>
+
+</body>
+</html>
