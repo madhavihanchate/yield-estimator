@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>India Crop Yield Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green-50: #f0fdf4; --green-100: #dcfce7; --green-200: #bbf7d0;
+    --green-500: #22c55e; --green-600: #16a34a; --green-700: #15803d; --green-800: #166534; --green-900: #14532d;
+    --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb; --gray-300: #d1d5db; --gray-400: #9ca3af;
+    --gray-500: #6b7280; --gray-600: #4b5563; --gray-700: #374151; --gray-800: #1f2937; --gray-900: #111827;
+    --amber-50: #fffbeb; --amber-500: #f59e0b; --amber-600: #d97706;
+    --red-50: #fef2f2; --red-500: #ef4444; --red-600: #dc2626;
+    --blue-50: #eff6ff; --blue-500: #3b82f6;
+    --radius: 14px; --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+    --shadow-lg: 0 4px 6px rgba(0,0,0,0.05), 0 10px 24px rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--gray-100); color: var(--gray-900); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+  .hero {
+    background: linear-gradient(160deg, var(--green-900) 0%, var(--green-700) 40%, var(--green-600) 100%);
+    color: white; padding: 3rem 1.5rem 2.5rem; text-align: center; position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: ''; position: absolute; top: -50%; right: -20%; width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%); border-radius: 50%;
+  }
+  .hero h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.4rem; position: relative; }
+  .hero h1 span { color: var(--green-200); }
+  .hero p { opacity: 0.8; font-size: 0.95rem; font-weight: 400; position: relative; }
+
+  .container { max-width: 780px; margin: -1.5rem auto 2rem; padding: 0 1rem; position: relative; z-index: 1; }
+
+  .card {
+    background: white; border-radius: var(--radius); padding: 1.6rem 1.8rem;
+    margin-bottom: 1rem; box-shadow: var(--shadow); border: 1px solid var(--gray-200);
+  }
+  .card-title {
+    font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--gray-400); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;
+  }
+  .card-title .icon { font-size: 1rem; }
+
+  .dropdowns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; }
+  @media (max-width: 640px) { .dropdowns { grid-template-columns: 1fr; } }
+
+  .field { position: relative; }
+  .field label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--gray-600); margin-bottom: 0.3rem; }
+  .field select, .field input {
+    width: 100%; padding: 0.65rem 0.9rem; border: 1.5px solid var(--gray-200); border-radius: 10px;
+    font-size: 0.9rem; font-family: inherit; background: var(--gray-50); color: var(--gray-800);
+    transition: all 0.15s ease; appearance: none; -webkit-appearance: none;
+  }
+  .field select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 0.75rem center; padding-right: 2rem;
+  }
+  .field select:focus, .field input:focus {
+    outline: none; border-color: var(--green-500);
+    box-shadow: 0 0 0 3px rgba(34,197,94,0.12); background-color: white;
+  }
+  .field select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .field .sub { font-size: 0.7rem; color: var(--gray-400); margin-top: 0.2rem; }
+
+  .soil-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.7rem; }
+  @media (max-width: 640px) { .soil-grid { grid-template-columns: repeat(2, 1fr); } }
+  .soil-grid .field input { text-align: center; font-weight: 600; font-size: 1rem; }
+
+  .predict-btn {
+    width: 100%; padding: 0.85rem; background: var(--green-700); color: white; border: none;
+    border-radius: 10px; font-size: 0.95rem; font-weight: 700; font-family: inherit;
+    cursor: pointer; transition: all 0.2s; margin-top: 1rem; letter-spacing: 0.01em;
+  }
+  .predict-btn:hover { background: var(--green-800); transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+  .predict-btn:active { transform: translateY(0); }
+  .predict-btn:disabled { background: var(--gray-300); cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .result-card { display: none; }
+  .result-card.visible { display: block; animation: slideUp 0.3s ease; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+  .yield-hero {
+    text-align: center; padding: 1.5rem 0 1rem;
+  }
+  .yield-hero .number {
+    font-size: 2.8rem; font-weight: 800; color: var(--green-700); letter-spacing: -0.03em; line-height: 1;
+  }
+  .yield-hero .unit { font-size: 1rem; color: var(--gray-500); font-weight: 500; margin-top: 0.2rem; }
+  .yield-hero .context { font-size: 0.8rem; color: var(--gray-400); margin-top: 0.5rem; }
+
+  .formula-bar {
+    background: var(--gray-50); border-radius: 10px; padding: 1rem 1.2rem;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap;
+    font-family: 'Inter', monospace; font-size: 0.85rem; margin: 1rem 0;
+  }
+  .formula-bar .num { font-weight: 700; color: var(--green-700); }
+  .formula-bar .op { color: var(--gray-400); font-weight: 500; }
+  .formula-bar .eq { color: var(--gray-800); font-weight: 700; font-size: 1rem; }
+
+  .factors { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8rem; margin: 1rem 0; }
+  @media (max-width: 540px) { .factors { grid-template-columns: 1fr; } }
+  .factor-card {
+    background: var(--gray-50); border-radius: 10px; padding: 1rem; text-align: center;
+    border: 1px solid var(--gray-200);
+  }
+  .factor-card .label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-400); margin-bottom: 0.5rem; }
+  .factor-card .value { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+  .factor-card .sub-detail { font-size: 0.72rem; color: var(--gray-400); margin-top: 0.3rem; line-height: 1.4; }
+  .factor-bar-track {
+    width: 100%; height: 6px; background: var(--gray-200); border-radius: 3px; margin-top: 0.6rem; overflow: hidden;
+  }
+  .factor-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .bar-green { background: var(--green-500); }
+  .bar-blue { background: var(--blue-500); }
+  .bar-amber { background: var(--amber-500); }
+
+  .breakdown { margin-top: 0.5rem; }
+  .breakdown-toggle {
+    font-size: 0.78rem; color: var(--green-700); font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; gap: 0.3rem; user-select: none;
+  }
+  .breakdown-toggle:hover { color: var(--green-800); }
+  .breakdown-toggle .arrow { transition: transform 0.2s; display: inline-block; }
+  .breakdown-toggle .arrow.open { transform: rotate(90deg); }
+  .breakdown-body { display: none; margin-top: 0.8rem; }
+  .breakdown-body.open { display: block; animation: slideUp 0.2s ease; }
+
+  .detail-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.45rem 0; border-bottom: 1px solid var(--gray-100); font-size: 0.82rem;
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row .dl { color: var(--gray-500); }
+  .detail-row .dv { font-weight: 600; color: var(--gray-700); }
+
+  .badge {
+    display: inline-block; padding: 0.15rem 0.55rem; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+  }
+  .badge-excellent { background: var(--green-100); color: var(--green-700); }
+  .badge-good { background: var(--blue-50); color: var(--blue-500); }
+  .badge-fair { background: var(--amber-50); color: var(--amber-600); }
+  .badge-poor { background: var(--red-50); color: var(--red-600); }
+
+  .range-row { display: flex; gap: 0.8rem; margin-top: 0.8rem; }
+  .range-box {
+    flex: 1; background: var(--gray-50); border-radius: 10px; padding: 0.8rem; text-align: center;
+    border: 1px solid var(--gray-200);
+  }
+  .range-box .rv { font-size: 1.1rem; font-weight: 700; color: var(--gray-700); }
+  .range-box .rl { font-size: 0.68rem; color: var(--gray-400); margin-top: 0.15rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+
+  .not-available {
+    padding: 1rem 1.2rem; background: var(--amber-50); border-radius: 10px;
+    color: var(--amber-600); font-size: 0.9rem; font-weight: 500;
+    border-left: 4px solid var(--amber-500);
+  }
+  .crop-dropdown {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+    background: white; border: 1.5px solid var(--gray-200); border-top: none;
+    border-radius: 0 0 10px 10px; max-height: 220px; overflow-y: auto;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+  }
+  .crop-dropdown.open { display: block; }
+  .crop-item {
+    padding: 0.55rem 0.9rem; font-size: 0.88rem; cursor: pointer;
+    border-bottom: 1px solid var(--gray-100); transition: background 0.1s;
+  }
+  .crop-item:last-child { border-bottom: none; }
+  .crop-item:hover, .crop-item.active { background: var(--green-50); color: var(--green-800); }
+  .crop-item .suffix { color: var(--gray-400); font-size: 0.75rem; }
+  .crop-item .match { font-weight: 700; color: var(--green-700); }
+  .crop-empty { padding: 0.7rem 0.9rem; color: var(--gray-400); font-size: 0.85rem; font-style: italic; }
+  .gee-warn {
+    padding: 0.9rem 1.2rem; border-radius: 10px; font-size: 0.85rem; font-weight: 500;
+    display: flex; align-items: flex-start; gap: 0.6rem; line-height: 1.5;
+  }
+  .gee-warn.error { background: var(--red-50); color: var(--red-600); border-left: 4px solid var(--red-500); }
+  .gee-warn.ok { background: var(--green-50); color: var(--green-700); border-left: 4px solid var(--green-500); }
+  .gee-warn .icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 0.1rem; }
+  .gee-warn code { background: rgba(0,0,0,0.06); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.78rem; }
+  .loading-msg { color: var(--gray-400); font-style: italic; text-align: center; padding: 1rem; }
+
+  footer {
+    text-align: center; padding: 2rem 1rem; color: var(--gray-400); font-size: 0.72rem; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Crop Yield <span>Predictor</span></h1>
+  <p>India &bull; District-level &bull; Yield gap decomposition model</p>
+</div>
+
+<div class="container">
+  <div class="card">
+    <div class="card-title"><span class="icon">&#127793;</span> Location &amp; Crop</div>
+    <div class="dropdowns">
+      <div class="field">
+        <label for="state">State</label>
+        <select id="state" onchange="onStateChange()">
+          <option value="">-- State --</option>
+          {% for s in states %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="district">District</label>
+        <select id="district" disabled><option value="">-- District --</option></select>
+      </div>
+      <div class="field">
+        <label for="cropInput">Crop</label>
+        <input type="text" id="cropInput" placeholder="Type to search..." disabled autocomplete="off">
+        <input type="hidden" id="crop">
+        <div class="sub" id="cropHint">-- Select District first --</div>
+        <div class="crop-dropdown" id="cropDropdown"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">&#127793;</span> Soil Parameters</div>
+    <div class="soil-grid">
+      <div class="field">
+        <label>SOC %</label>
+        <input type="number" id="soc" value="0.5" min="0" max="5" step="0.1">
+        <div class="sub">Organic carbon</div>
+      </div>
+      <div class="field">
+        <label>pH</label>
+        <input type="number" id="pH" value="6.5" min="3" max="10" step="0.1">
+        <div class="sub">Optimal 6.5&ndash;7.5</div>
+      </div>
+      <div class="field">
+        <label>N kg/ha</label>
+        <input type="number" id="N" value="200" min="0" max="500" step="10">
+        <div class="sub">Nitrogen</div>
+      </div>
+      <div class="field">
+        <label>P kg/ha</label>
+        <input type="number" id="P" value="20" min="0" max="100" step="1">
+        <div class="sub">Phosphorus</div>
+      </div>
+      <div class="field">
+        <label>K kg/ha</label>
+        <input type="number" id="K" value="150" min="0" max="500" step="10">
+        <div class="sub">Potassium</div>
+      </div>
+    </div>
+    <button class="predict-btn" id="predictBtn" onclick="predict()">Estimate Yield</button>
+  </div>
+
+  <div class="card result-card" id="resultCard">
+    <div id="resultContent"></div>
+  </div>
+
+  <div class="card" id="geeCard" style="display:none">
+    <div id="geeMessage"></div>
+  </div>
+</div>
+
+<footer>
+  Data: India_All_Districts_Crop_Yield_Master_1997&ndash;2024 &bull;
+  Water: Open-Meteo Archive &bull; Vegetation: MODIS MOD13A2 (GEE) &bull;
+  Soil: User-provided
+</footer>
+
+<script>
+var HIERARCHY = {{ hierarchy_json|safe }};
+var _cropList = [];
+var _activeCropIdx = -1;
+var _geeOk = false;
+
+function gradeBadge(g) {
+  var c = {Excellent:'badge-excellent',Good:'badge-good',Fair:'badge-fair',Poor:'badge-poor',Critical:'badge-poor'};
+  return '<span class="badge '+(c[g]||'badge-fair')+'">'+g+'</span>';
+}
+
+function cleanCropName(name) {
+  var m = name.match(/^(.+?)\s*\((.+)\)\s*$/);
+  if (m) return { base: m[1].trim(), suffix: m[2].trim(), full: name };
+  return { base: name, suffix: '', full: name };
+}
+
+function highlightMatch(text, query) {
+  if (!query) return text;
+  var idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return text.substring(0, idx) + '<span class="match">' + text.substring(idx, idx + query.length) + '</span>' + text.substring(idx + query.length);
+}
+
+function showCropDropdown(query) {
+  var dd = document.getElementById('cropDropdown');
+  var q = (query || '').toLowerCase().trim();
+  var matches = _cropList.filter(function(c) {
+    if (!q) return true;
+    var cl = cleanCropName(c);
+    return cl.base.toLowerCase().indexOf(q) !== -1 || cl.suffix.toLowerCase().indexOf(q) !== -1 || c.toLowerCase().indexOf(q) !== -1;
+  });
+  if (matches.length === 0) {
+    dd.innerHTML = '<div class="crop-empty">No crops match "' + query + '"</div>';
+    dd.classList.add('open');
+    return;
+  }
+  var html = '';
+  matches.forEach(function(c, i) {
+    var cl = cleanCropName(c);
+    var label = highlightMatch(cl.base, q);
+    if (cl.suffix) label += ' <span class="suffix">' + highlightMatch(cl.suffix, q) + '</span>';
+    html += '<div class="crop-item" data-full="' + c.replace(/"/g, '&quot;') + '" data-idx="' + i + '">' + label + '</div>';
+  });
+  dd.innerHTML = html;
+  dd.classList.add('open');
+  _activeCropIdx = -1;
+  dd.querySelectorAll('.crop-item').forEach(function(el) {
+    el.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      selectCrop(el.getAttribute('data-full'));
+    });
+  });
+}
+
+function selectCrop(fullName) {
+  var inp = document.getElementById('cropInput');
+  var hidden = document.getElementById('crop');
+  var dd = document.getElementById('cropDropdown');
+  var hint = document.getElementById('cropHint');
+  var cl = cleanCropName(fullName);
+  inp.value = cl.base + (cl.suffix ? ' (' + cl.suffix + ')' : '');
+  hidden.value = fullName;
+  dd.classList.remove('open');
+  dd.innerHTML = '';
+  hint.textContent = '';
+  inp.blur();
+  document.getElementById('resultCard').classList.remove('visible');
+}
+
+var cropInput = document.getElementById('cropInput');
+cropInput.addEventListener('input', function() { showCropDropdown(this.value); });
+cropInput.addEventListener('focus', function() { if (_cropList.length) showCropDropdown(this.value); });
+cropInput.addEventListener('keydown', function(e) {
+  var dd = document.getElementById('cropDropdown');
+  var items = dd.querySelectorAll('.crop-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _activeCropIdx = Math.min(_activeCropIdx + 1, items.length - 1);
+    items.forEach(function(el, i) { el.classList.toggle('active', i === _activeCropIdx); });
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _activeCropIdx = Math.max(_activeCropIdx - 1, 0);
+    items.forEach(function(el, i) { el.classList.toggle('active', i === _activeCropIdx); });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (_activeCropIdx >= 0 && items[_activeCropIdx]) {
+      selectCrop(items[_activeCropIdx].getAttribute('data-full'));
+    }
+  } else if (e.key === 'Escape') {
+    dd.classList.remove('open');
+  }
+});
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.field') || !e.target.closest('.field').querySelector('#cropInput')) {
+    document.getElementById('cropDropdown').classList.remove('open');
+  }
+});
+
+function onStateChange() {
+  var st = document.getElementById('state').value;
+  var ds = document.getElementById('district');
+  var ci = document.getElementById('cropInput');
+  var ch = document.getElementById('crop');
+  var hint = document.getElementById('cropHint');
+  ci.value = ''; ci.disabled = true; ch.value = '';
+  hint.textContent = '-- Select District first --';
+  document.getElementById('cropDropdown').classList.remove('open');
+  if (!st || !HIERARCHY[st]) {
+    ds.innerHTML = '<option value="">-- District --</option>'; ds.disabled = true; return;
+  }
+  var districts = Object.keys(HIERARCHY[st]).sort();
+  var s = ds;
+  s.innerHTML = '<option value="">-- District --</option>';
+  districts.forEach(function(d) { var o = document.createElement('option'); o.value = d; o.textContent = d; s.appendChild(o); });
+  s.disabled = false;
+  document.getElementById('resultCard').classList.remove('visible');
+}
+
+function onDistrictChange() {
+  var st = document.getElementById('state').value, di = document.getElementById('district').value;
+  var ci = document.getElementById('cropInput');
+  var ch = document.getElementById('crop');
+  var hint = document.getElementById('cropHint');
+  if (!st || !di || !HIERARCHY[st] || !HIERARCHY[st][di]) {
+    ci.value = ''; ci.disabled = true; ch.value = '';
+    hint.textContent = '-- Select District first --';
+    _cropList = [];
+    return;
+  }
+  _cropList = HIERARCHY[st][di].sort();
+  ci.disabled = false; ci.value = ''; ch.value = '';
+  hint.textContent = _cropList.length + ' crops available \u2014 type to search';
+  document.getElementById('resultCard').classList.remove('visible');
+}
+document.getElementById('district').addEventListener('change', onDistrictChange);
+
+function toggleBreakdown() {
+  var body = document.getElementById('breakdownBody');
+  var arrow = document.getElementById('breakdownArrow');
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
+async function checkGeeStatus() {
+  try {
+    var resp = await fetch('/api/gee-status/');
+    var data = await resp.json();
+    var card = document.getElementById('geeCard');
+    var msg = document.getElementById('geeMessage');
+    if (data.authenticated) {
+      _geeOk = true;
+      msg.innerHTML = '<div class="gee-warn ok"><span class="icon">&#9989;</span><div><strong>Google Earth Engine</strong> connected. NDVI data fetched live from MODIS satellites.</div></div>';
+    } else {
+      _geeOk = false;
+      msg.innerHTML = '<div class="gee-warn error"><span class="icon">&#9888;</span><div><strong>Google Earth Engine not authenticated.</strong> NDVI satellite data will not be available. Predictions will use a default value (0.7) instead of real satellite data.<br><br>To fix: run <code>earthengine authenticate</code> on the server, then restart the app.</div></div>';
+    }
+    card.style.display = 'block';
+  } catch (e) {}
+}
+
+async function predict() {
+  var district = document.getElementById('district').value;
+  var crop = document.getElementById('crop').value;
+  var soc = document.getElementById('soc').value, pH = document.getElementById('pH').value;
+  var N = document.getElementById('N').value, P = document.getElementById('P').value, K = document.getElementById('K').value;
+  var btn = document.getElementById('predictBtn');
+  var card = document.getElementById('resultCard');
+  var content = document.getElementById('resultContent');
+
+  if (!district || !crop) {
+    content.innerHTML = '<div class="not-available">Select a district and crop first.</div>';
+    card.classList.add('visible'); return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Estimating\u2026';
+  card.classList.add('visible');
+  content.innerHTML = '<div class="loading-msg">Fetching satellite data &amp; computing yield\u2026</div>';
+
+  try {
+    var params = new URLSearchParams({district:district,crop:crop,soc:soc,pH:pH,N:N,P:P,K:K});
+    var resp = await fetch('/api/predict/?' + params.toString());
+    var data = await resp.json();
+
+    if (data.status === 'available') {
+      var d = data.data;
+      var sf = (d.soil_factor * 100).toFixed(0);
+      var wf = (d.water_factor * 100).toFixed(0);
+      var nf = (d.ndvi_factor * 100).toFixed(0);
+      var showCrop = cleanCropName(d.crop).base;
+
+      var ndviLabel = d.ndvi_source ? d.ndvi_source.replace('MODIS_MOD13A2_2023_live', 'MODIS Live') : 'Default (0.7)';
+      if (!d.gee_authenticated) ndviLabel = 'No GEE auth \u2014 default';
+
+      content.innerHTML =
+        '<div class="yield-hero">' +
+          '<div class="number">' + d.predicted_yield.toFixed(0) + '</div>' +
+          '<div class="unit">kg / hectare</div>' +
+          '<div class="context">' + d.district + ' &bull; ' + showCrop + ' &bull; ' + d.n_years + ' years of data</div>' +
+        '</div>' +
+
+        '<div class="formula-bar">' +
+          '<span class="num">' + d.potential_yield.toFixed(0) + '</span> <span class="op">&times;</span> ' +
+          '<span class="num">' + d.soil_factor.toFixed(3) + '</span> <span class="op">&times;</span> ' +
+          '<span class="num">' + d.water_factor.toFixed(3) + '</span> <span class="op">&times;</span> ' +
+          '<span class="num">' + d.ndvi_factor.toFixed(3) + '</span> ' +
+          '<span class="op">=</span> <span class="num eq">' + d.predicted_yield.toFixed(0) + '</span> <span class="op">kg/ha</span>' +
+        '</div>' +
+
+        '<div class="factors">' +
+          '<div class="factor-card">' +
+            '<div class="label">Soil</div>' +
+            '<div class="value" style="color:var(--green-700)">' + sf + '%</div>' +
+            '<div class="sub-detail">' + gradeBadge(d.soil.grade) + '</div>' +
+            '<div class="factor-bar-track"><div class="factor-bar-fill bar-green" style="width:' + sf + '%"></div></div>' +
+          '</div>' +
+          '<div class="factor-card">' +
+            '<div class="label">Water</div>' +
+            '<div class="value" style="color:var(--blue-500)">' + wf + '%</div>' +
+            '<div class="sub-detail">Irrigation: ' + d.irrigation_score.toFixed(2) + '</div>' +
+            '<div class="factor-bar-track"><div class="factor-bar-fill bar-blue" style="width:' + wf + '%"></div></div>' +
+          '</div>' +
+          '<div class="factor-card">' +
+            '<div class="label">Vegetation (NDVI)</div>' +
+            '<div class="value" style="color:var(--amber-600)">' + nf + '%</div>' +
+            '<div class="sub-detail">' + ndviLabel + '</div>' +
+            '<div class="sub-detail" style="margin-top:0.2rem;font-size:0.68rem;color:var(--gray-400)">Greenness from satellite<br>higher = healthier crops</div>' +
+            '<div class="factor-bar-track"><div class="factor-bar-fill bar-amber" style="width:' + nf + '%"></div></div>' +
+          '</div>' +
+        '</div>' +
+
+        '<div class="breakdown">' +
+          '<div class="breakdown-toggle" onclick="toggleBreakdown()">' +
+            '<span class="arrow" id="breakdownArrow">&#9654;</span> Detailed Breakdown' +
+          '</div>' +
+          '<div class="breakdown-body" id="breakdownBody">' +
+
+            '<div style="margin-top:0.5rem">' +
+              '<div class="detail-row"><span class="dl">Potential Yield (historical avg)</span><span class="dv">' + d.potential_yield.toFixed(0) + ' kg/ha</span></div>' +
+              '<div class="detail-row"><span class="dl">90th Percentile</span><span class="dv">' + d.p90_yield.toFixed(0) + ' kg/ha</span></div>' +
+              '<div class="detail-row"><span class="dl">All-time Max</span><span class="dv">' + d.max_yield.toFixed(0) + ' kg/ha</span></div>' +
+            '</div>' +
+
+            '<div style="margin-top:0.8rem;font-size:0.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem">Soil Breakdown</div>' +
+            '<div class="detail-row"><span class="dl">SOC (max 25)</span><span class="dv">' + d.soil.soc.toFixed(1) + '</span></div>' +
+            '<div class="detail-row"><span class="dl">pH (max 25)</span><span class="dv">' + d.soil.pH.toFixed(1) + '</span></div>' +
+            '<div class="detail-row"><span class="dl">Nitrogen (max 20)</span><span class="dv">' + d.soil.N.toFixed(1) + '</span></div>' +
+            '<div class="detail-row"><span class="dl">Phosphorus (max 15)</span><span class="dv">' + d.soil.P.toFixed(1) + '</span></div>' +
+            '<div class="detail-row"><span class="dl">Potassium (max 15)</span><span class="dv">' + d.soil.K.toFixed(1) + '</span></div>' +
+
+            '<div style="margin-top:0.8rem;font-size:0.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem">Water Breakdown</div>' +
+            '<div class="detail-row"><span class="dl">Historical rainfall</span><span class="dv">' + d.hist_precip_mm.toFixed(0) + ' mm</span></div>' +
+            '<div class="detail-row"><span class="dl">ET0</span><span class="dv">' + d.et0_mm.toFixed(0) + ' mm</span></div>' +
+            '<div class="detail-row"><span class="dl">Rain water factor</span><span class="dv">' + d.hist_water_factor.toFixed(3) + '</span></div>' +
+            '<div class="detail-row"><span class="dl">2023 rainfall</span><span class="dv">' + d.precip_mm.toFixed(0) + ' mm</span></div>' +
+            '<div class="detail-row"><span class="dl">Irrigation score</span><span class="dv">' + d.irrigation_score.toFixed(3) + '</span></div>' +
+
+            '<div style="margin-top:0.8rem;font-size:0.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem">Vegetation (NDVI)</div>' +
+            '<div class="detail-row"><span class="dl">Satellite greenness index</span><span class="dv">' + (d.ndvi_raw/10000).toFixed(3) + '</span></div>' +
+            '<div class="detail-row"><span class="dl">How this affects yield</span><span class="dv">' + nf + '% of potential</span></div>' +
+            '<div class="detail-row"><span class="dl">Source</span><span class="dv">' + d.ndvi_source + '</span></div>' +
+
+          '</div>' +
+        '</div>';
+
+    } else {
+      content.innerHTML = '<div class="not-available">' + (data.message || 'No data available.') + '</div>';
+    }
+  } catch (e) {
+    content.innerHTML = '<div class="not-available">Error: ' + e.message + '</div>';
+  }
+
+  btn.disabled = false; btn.textContent = 'Estimate Yield';
+}
+
+checkGeeStatus();
+</script>
+</body>
+</html>
