@@ -183,6 +183,9 @@
   .gee-warn.ok { background: var(--green-50); color: var(--green-700); border-left: 4px solid var(--green-500); }
   .gee-warn .icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 0.1rem; }
   .gee-warn code { background: rgba(0,0,0,0.06); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.78rem; }
+  .chart-wrap { margin-top: 1rem; background: var(--gray-50); border-radius: 10px; padding: 1rem; border: 1px solid var(--gray-200); }
+  .chart-title { font-size: 0.72rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.6rem; }
+  .chart-canvas { width: 100%; height: 200px; }
   .loading-msg { color: var(--gray-400); font-style: italic; text-align: center; padding: 1rem; }
 
   footer {
@@ -532,7 +535,16 @@ async function predict() {
             '<div class="detail-row"><span class="dl">Source</span><span class="dv">' + d.ndvi_source + '</span></div>' +
 
           '</div>' +
+        '</div>' +
+
+        '<div class="chart-wrap" id="chartWrap">' +
+          '<div class="chart-title">Yield History vs Prediction</div>' +
+          '<canvas id="yieldChart" class="chart-canvas"></canvas>' +
         '</div>';
+
+      fetch('/api/history/?district=' + encodeURIComponent(district) + '&crop=' + encodeURIComponent(crop))
+        .then(function(r) { return r.json(); })
+        .then(function(h) { drawChart(h.years, d.predicted_yield); });
 
     } else {
       content.innerHTML = '<div class="not-available">' + (data.message || 'No data available.') + '</div>';
@@ -542,6 +554,82 @@ async function predict() {
   }
 
   btn.disabled = false; btn.textContent = 'Estimate Yield';
+}
+
+function drawChart(historyData, predictedYield) {
+  var canvas = document.getElementById('yieldChart');
+  if (!canvas || !historyData || Object.keys(historyData).length === 0) {
+    var wrap = document.getElementById('chartWrap');
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  var W = rect.width, H = rect.height;
+
+  var years = Object.keys(historyData).sort();
+  var yields = years.map(function(y) { return historyData[y].yield; });
+  yields.push(predictedYield);
+  var allVals = yields.concat([0]);
+  var maxVal = Math.max.apply(null, allVals) * 1.15;
+
+  var pad = {top: 10, right: 15, bottom: 35, left: 55};
+  var chartW = W - pad.left - pad.right;
+  var chartH = H - pad.top - pad.bottom;
+  var totalBars = years.length + 1;
+  var barW = Math.min(chartW / totalBars * 0.7, 28);
+  var gap = (chartW - barW * totalBars) / (totalBars + 1);
+
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.lineWidth = 1;
+  var ticks = 5;
+  for (var i = 0; i <= ticks; i++) {
+    var y = pad.top + chartH - (i / ticks) * chartH;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+    ctx.fillStyle = '#9ca3af'; ctx.font = '10px Inter, sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxVal * i / ticks), pad.left - 6, y + 3);
+  }
+
+  for (var j = 0; j < years.length; j++) {
+    var x = pad.left + gap + j * (barW + gap);
+    var barH = (historyData[years[j]].yield / maxVal) * chartH;
+    var by = pad.top + chartH - barH;
+    ctx.fillStyle = '#93c5fd';
+    ctx.beginPath();
+    var r = 3;
+    ctx.moveTo(x + r, by); ctx.lineTo(x + barW - r, by); ctx.quadraticCurveTo(x + barW, by, x + barW, by + r);
+    ctx.lineTo(x + barW, pad.top + chartH); ctx.lineTo(x, pad.top + chartH); ctx.lineTo(x, by + r);
+    ctx.quadraticCurveTo(x, by, x + r, by); ctx.fill();
+
+    ctx.fillStyle = '#6b7280'; ctx.font = '9px Inter, sans-serif'; ctx.textAlign = 'center';
+    ctx.save(); ctx.translate(x + barW / 2, pad.top + chartH + 10); ctx.rotate(-0.5);
+    ctx.fillText(years[j], 0, 0); ctx.restore();
+  }
+
+  var px = pad.left + gap + years.length * (barW + gap);
+  var pH = (predictedYield / maxVal) * chartH;
+  var py = pad.top + chartH - pH;
+  ctx.fillStyle = '#16a34a';
+  ctx.beginPath();
+  ctx.moveTo(px + r, py); ctx.lineTo(px + barW - r, py); ctx.quadraticCurveTo(px + barW, py, px + barW, py + r);
+  ctx.lineTo(px + barW, pad.top + chartH); ctx.lineTo(px, pad.top + chartH); ctx.lineTo(px, py + r);
+  ctx.quadraticCurveTo(px, py, px + r, py); ctx.fill();
+
+  ctx.fillStyle = '#166534'; ctx.font = 'bold 10px Inter, sans-serif'; ctx.textAlign = 'center';
+  ctx.save(); ctx.translate(px + barW / 2, pad.top + chartH + 10); ctx.rotate(-0.5);
+  ctx.fillText('Predicted', 0, 0); ctx.restore();
+
+  ctx.fillStyle = '#166534'; ctx.font = 'bold 10px Inter, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(Math.round(predictedYield), px + barW / 2, py - 5);
+
+  ctx.fillStyle = '#6b7280'; ctx.font = '10px Inter, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Yield (kg/ha)', W / 2, H - 2);
 }
 
 checkGeeStatus();

@@ -17,6 +17,7 @@ _lookup = None
 _categories = None
 _hierarchy = None
 _centroids = None
+_yield_history = None
 
 _gee_initialized = False
 _gee_error = None
@@ -77,7 +78,7 @@ def _fetch_ndvi_live(district):
 
 
 def _load():
-    global _potential, _water, _irrigation, _lookup, _categories, _hierarchy, _centroids
+    global _potential, _water, _irrigation, _lookup, _categories, _hierarchy, _centroids, _yield_history
     if _potential is not None:
         return
     with open(os.path.join(OUTPUT_DIR, "potential_yields.json")) as f:
@@ -97,6 +98,10 @@ def _load():
     if os.path.exists(CENTROIDS_PATH):
         with open(CENTROIDS_PATH) as f:
             _centroids = json.load(f)
+    hist_path = os.path.join(OUTPUT_DIR, "yield_history.json")
+    if os.path.exists(hist_path):
+        with open(hist_path) as f:
+            _yield_history = json.load(f)
     _init_gee()
 
 
@@ -230,3 +235,13 @@ def api_predict(request):
 def api_lookup(request):
     _load()
     return JsonResponse(_lookup)
+
+
+def api_history(request):
+    _load()
+    district = request.GET.get("district", "").strip()
+    crop = request.GET.get("crop", "").strip()
+    if not district or not crop or _yield_history is None:
+        return JsonResponse({"years": {}})
+    key = f"{district}|{crop}"
+    return JsonResponse({"years": _yield_history.get(key, {})})

@@ -14,6 +14,7 @@ output/predictions_latest.csv
 output/coverage_report.csv
 output/data_quality.json
 output/models.json
+output/yield_history.json
 
 # GEE credentials
 .config/earthengine/
