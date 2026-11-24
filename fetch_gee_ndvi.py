@@ -13,7 +13,17 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 CENTROIDS_PATH = os.path.join(OUTPUT_DIR, "centroids.json")
 NDVI_PATH = os.path.join(OUTPUT_DIR, "ndvi_data.json")
 
-ee.Initialize(project="yield-estimate-502708")
+from pathlib import Path
+try:
+    import dotenv
+    env_path = Path(BASE_DIR) / ".env"
+    if env_path.exists():
+        dotenv.load_dotenv(env_path)
+except Exception:
+    pass
+
+project_id = os.environ.get("EARTHENGINE_PROJECT") or os.environ.get("GEE_PROJECT_ID") or "seed2serve"
+ee.Initialize(project=project_id)
 
 with open(CENTROIDS_PATH) as f:
     centroids = json.load(f)

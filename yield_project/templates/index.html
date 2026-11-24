@@ -226,7 +226,15 @@
   </div>
 
   <div class="card">
-    <div class="card-title"><span class="icon">&#127793;</span> Soil Parameters</div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+      <div class="card-title" style="margin-bottom: 0;"><span class="icon">&#127793;</span> Soil Parameters</div>
+      <button type="button" id="pasteYieldTicketBtn" style="background:#087F5B;color:#fff;border:none;padding:0.4rem 0.85rem;border-radius:8px;font-size:0.8rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:0.4rem;transition:all 0.2s;">
+        <span id="pasteYieldBtnText">&#128203; Paste Scanned Ticket Values</span>
+      </button>
+    </div>
+    <div id="yieldPasteNotice" style="display:none;background:#DFF4E4;color:#0A5F4A;padding:0.55rem 0.85rem;border-radius:8px;font-size:0.82rem;font-weight:500;margin-bottom:0.9rem;">
+      &#10003; <strong>Soil Ticket Values Applied!</strong> Parameters populated from SoiLENZ ticket.
+    </div>
     <div class="soil-grid">
       <div class="field">
         <label>SOC %</label>
@@ -633,6 +641,174 @@ function drawChart(historyData, predictedYield) {
 }
 
 checkGeeStatus();
+
+// Soil Ticket Clipboard & URL Query String Synchronization
+function parseSoilDataString(str) {
+  if (!str) return null;
+  var text = str.trim();
+  if (text.indexOf('SEED2SERVE_SOIL_DATA:') !== -1) {
+    try {
+      var jsonPart = text.substring(text.indexOf('SEED2SERVE_SOIL_DATA:') + 'SEED2SERVE_SOIL_DATA:'.length).trim();
+      return JSON.parse(jsonPart);
+    } catch(e) {}
+  }
+  if (text.startsWith('{') && text.endsWith('}')) {
+    try { return JSON.parse(text); } catch(e) {}
+  }
+  var data = {};
+  function extractNum(patterns) {
+    for (var i = 0; i < patterns.length; i++) {
+      var m = text.match(patterns[i]);
+      if (m && m[1]) {
+        var v = parseFloat(m[1].replace(',', '.').trim());
+        if (!isNaN(v)) return v;
+      }
+    }
+    return null;
+  }
+  data.ph = extractNum([/\bpH\s*[:=-]?\s*(\d+(?:\.\d+)?)/i]);
+  data.soc = extractNum([/\b(?:SOC|OC)\s*(?:\([^)]*\))?\s*[:=-]?\s*(\d+(?:\.\d+)?)/i]);
+  data.n = extractNum([/\b(?:Nitrogen|N)\s*(?:\([^)]*\))?\s*[:=-]?\s*(\d+(?:\.\d+)?)/i]);
+  data.p = extractNum([/\b(?:Phosphorus|P)\s*(?:\([^)]*\))?\s*[:=-]?\s*(\d+(?:\.\d+)?)/i]);
+  data.k = extractNum([/\b(?:Potassium|K)\s*(?:\([^)]*\))?\s*[:=-]?\s*(\d+(?:\.\d+)?)/i]);
+  return data;
+}
+
+function applySoilDataToYieldForm(data) {
+  if (!data) return;
+  var count = 0;
+  document.querySelectorAll('.yield-ticket-tag').forEach(function(t) { t.remove(); });
+
+  var map = {
+    'soc': (data.soc !== undefined && data.soc !== null) ? data.soc : data.oc,
+    'pH': (data.ph !== undefined && data.ph !== null) ? data.ph : data.pH,
+    'N': (data.n !== undefined && data.n !== null) ? data.n : data.N,
+    'P': (data.p !== undefined && data.p !== null) ? data.p : data.P,
+    'K': (data.k !== undefined && data.k !== null) ? data.k : data.K
+  };
+
+  for (var id in map) {
+    var val = map[id];
+    if (val !== undefined && val !== null && val !== '') {
+      var el = document.getElementById(id);
+      if (el) {
+        el.value = val;
+        el.style.borderColor = '#087F5B';
+        el.style.backgroundColor = '#F0FAF3';
+        el.style.boxShadow = '0 0 0 3px rgba(8, 127, 91, 0.15)';
+        var parent = el.closest('.field') || el.parentElement;
+        if (parent) {
+          var label = parent.querySelector('label');
+          if (label && !label.querySelector('.yield-ticket-tag')) {
+            var tag = document.createElement('span');
+            tag.className = 'yield-ticket-tag';
+            tag.style.cssText = 'font-size:0.7rem;color:#0A5F4A;font-weight:600;margin-left:0.35rem;background:#DFF4E4;padding:0.1rem 0.35rem;border-radius:4px;';
+            tag.textContent = '✓ Pasted';
+            label.appendChild(tag);
+          }
+        }
+        count++;
+      }
+    }
+  }
+
+  var stateVal = data.state_name || data.state;
+  if (stateVal) {
+    var stateSelect = document.getElementById('state');
+    if (stateSelect) {
+      for (var i = 0; i < stateSelect.options.length; i++) {
+        if (stateSelect.options[i].value.toLowerCase() === stateVal.toLowerCase()) {
+          stateSelect.selectedIndex = i;
+          onStateChange();
+          break;
+        }
+      }
+    }
+  }
+
+  if (count > 0) {
+    var notice = document.getElementById('yieldPasteNotice');
+    if (notice) notice.style.display = 'block';
+    var btnText = document.getElementById('pasteYieldBtnText');
+    if (btnText) {
+      btnText.textContent = '✓ Ticket Values Pasted!';
+      var btn = document.getElementById('pasteYieldTicketBtn');
+      if (btn) btn.style.background = '#065F46';
+      setTimeout(function() {
+        if (btnText) btnText.textContent = '📋 Paste Scanned Ticket Values';
+        if (btn) btn.style.background = '#087F5B';
+      }, 2500);
+    }
+  }
+}
+
+function initYieldClipboardAndParams() {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('soc') || params.get('oc') || params.get('ph') || params.get('n') || params.get('pH')) {
+    var pData = {
+      soc: params.get('soc') || params.get('oc'),
+      ph: params.get('ph') || params.get('pH'),
+      n: params.get('n') || params.get('N'),
+      p: params.get('p') || params.get('P'),
+      k: params.get('k') || params.get('K'),
+      state: params.get('state'),
+      district: params.get('district'),
+      crop: params.get('crop')
+    };
+    applySoilDataToYieldForm(pData);
+  } else {
+    try {
+      var raw = localStorage.getItem('seed2serve_soil_ticket') || sessionStorage.getItem('seed2serve_soil_ticket');
+      if (raw) {
+        var stored = JSON.parse(raw);
+        applySoilDataToYieldForm(stored);
+      }
+    } catch(e) {}
+  }
+
+  var pasteBtn = document.getElementById('pasteYieldTicketBtn');
+  if (pasteBtn) {
+    pasteBtn.addEventListener('click', function() {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        var rawPrompt = prompt('Paste your copied SEED2SERVE_SOIL_DATA text here (Ctrl+V):');
+        if (rawPrompt && rawPrompt.trim()) {
+          var parsed = parseSoilDataString(rawPrompt);
+          if (parsed) applySoilDataToYieldForm(parsed);
+          else alert('Could not recognize soil ticket data in the pasted text.');
+        }
+        return;
+      }
+      navigator.clipboard.readText()
+        .then(function(clipText) {
+          if (!clipText || !clipText.trim()) {
+            alert('Clipboard is empty! Please scan a ticket on Seed2Serve (localhost:3000) and click "Copy Soil Values" first.');
+            return;
+          }
+          var parsed = parseSoilDataString(clipText);
+          if (parsed && (parsed.ph !== undefined || parsed.n !== undefined || parsed.soc !== undefined || parsed.oc !== undefined)) {
+            applySoilDataToYieldForm(parsed);
+          } else {
+            var rawPrompt2 = prompt('Paste your copied SEED2SERVE_SOIL_DATA text here (Ctrl+V):', clipText);
+            if (rawPrompt2 && rawPrompt2.trim()) {
+              var parsed2 = parseSoilDataString(rawPrompt2);
+              if (parsed2) applySoilDataToYieldForm(parsed2);
+              else alert('Could not recognize soil ticket data in the pasted text.');
+            }
+          }
+        })
+        .catch(function(err) {
+          console.warn('Clipboard read error:', err);
+          var rawPrompt = prompt('Paste your copied SEED2SERVE_SOIL_DATA text here (Ctrl+V):');
+          if (rawPrompt && rawPrompt.trim()) {
+            var parsed = parseSoilDataString(rawPrompt);
+            if (parsed) applySoilDataToYieldForm(parsed);
+          }
+        });
+    });
+  }
+}
+
+initYieldClipboardAndParams();
 </script>
 </body>
 </html>

@@ -45,17 +45,28 @@ FAO_KC = {
 DEFAULT_KC = 1.1
 
 
-def _init_gee():
+def _init_gee(force=False):
     global _gee_initialized, _gee_error
-    if _gee_initialized or _gee_error:
+    if _gee_initialized and not force:
         return
     try:
+        from pathlib import Path
+        try:
+            import dotenv
+            env_path = Path(BASE_DIR).parent / ".env"
+            if env_path.exists():
+                dotenv.load_dotenv(env_path)
+        except Exception:
+            pass
+        project_id = os.environ.get("EARTHENGINE_PROJECT") or os.environ.get("GEE_PROJECT_ID") or "seed2serve"
         import ee
-        ee.Initialize(project="yield-estimate-502708")
+        ee.Initialize(project=project_id)
         _gee_initialized = True
-        logger.info("GEE initialized successfully")
+        _gee_error = None
+        logger.info("GEE initialized successfully with project: %s", project_id)
     except Exception as e:
         _gee_error = str(e)
+        _gee_initialized = False
         logger.warning("GEE init failed: %s", e)
 
 
@@ -144,6 +155,8 @@ def index(request):
 
 def api_gee_status(request):
     _load()
+    if not _gee_initialized:
+        _init_gee(force=True)
     return JsonResponse({
         "authenticated": _gee_initialized,
         "error": _gee_error,
